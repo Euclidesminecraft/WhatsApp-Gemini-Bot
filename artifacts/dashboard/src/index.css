@@ -1,0 +1,64 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: hsl(var(--border));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --font-sans: 'Inter', sans-serif;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 8px);
+  --radius-2xl: calc(var(--radius) + 16px);
+}
+
+:root {
+  --background: 0 0% 0%;           /* #000000 */
+  --foreground: 0 0% 100%;         /* #FFFFFF */
+  --border: 214 30% 16%;
+  --card: 214 65% 11%;             /* #0A1A2F */
+  --card-foreground: 0 0% 100%;
+  --primary: 46 65% 52%;           /* #D4AF37 gold */
+  --primary-foreground: 0 0% 0%;
+  --muted: 214 40% 16%;
+  --muted-foreground: 214 20% 55%;
+  --accent: 46 65% 52%;
+  --accent-foreground: 0 0% 0%;
+  --destructive: 0 72% 51%;
+  --input: 214 40% 18%;
+  --ring: 46 65% 52%;
+  --radius: 0.75rem;
+}
+
+@layer base {
+  * { @apply border-border; box-sizing: border-box; }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    background-color: #000000;
+    color: #ffffff;
+    font-family: 'Inter', sans-serif;
+  }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #000; }
+  ::-webkit-scrollbar-thumb { background: #0A1A2F; border-radius: 4px; }
+}
+
+@layer utilities {
+  .gold { color: #D4AF37; }
+  .bg-darkblue { background-color: #0A1A2F; }
+  .border-darkblue { border-color: #0A1A2F; }
+  .card-shadow { box-shadow: 0 0 0 1px rgba(212, 175, 55, 0.08), 0 4px 24px rgba(0, 0, 0, 0.6); }
+  .gold-shadow { box-shadow: 0 0 24px rgba(212, 175, 55, 0.2); }
+}
