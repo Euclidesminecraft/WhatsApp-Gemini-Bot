@@ -29,6 +29,11 @@ export default defineConfig({
     strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
+    headers: {
+      "X-Frame-Options": "ALLOWALL",
+      "Content-Security-Policy": "frame-ancestors *",
+      "Cache-Control": "no-store",
+    },
     proxy: {
       "/status": { target: "http://localhost:3000", changeOrigin: true },
       "/mensagens": { target: "http://localhost:3000", changeOrigin: true },
@@ -41,5 +46,10 @@ export default defineConfig({
     port,
     host: "0.0.0.0",
     allowedHosts: true,
+    headers: {
+      "X-Frame-Options": "ALLOWALL",
+      "Content-Security-Policy": "frame-ancestors *",
+      "Cache-Control": "no-store",
+    },
   },
 });
