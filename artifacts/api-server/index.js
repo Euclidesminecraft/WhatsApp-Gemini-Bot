@@ -1,7 +1,9 @@
-import { Client, LocalAuth } from 'whatsapp-web.js';
+import pkg from 'whatsapp-web.js';
+const { Client, LocalAuth } = pkg;
 import qrcode from 'qrcode-terminal';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import express from 'express';
+import { execSync } from 'child_process';
 
 // In-memory prompt storage
 const prompts = {};
@@ -13,9 +15,17 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY);
 const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
 // ── WhatsApp ──────────────────────────────────────────────────────────────────
+let chromiumPath;
+try {
+  chromiumPath = execSync('which chromium 2>/dev/null || which chromium-browser 2>/dev/null').toString().trim();
+} catch {
+  chromiumPath = undefined;
+}
+
 const client = new Client({
   authStrategy: new LocalAuth({ clientId: 'cliente1' }),
   puppeteer: {
+    ...(chromiumPath ? { executablePath: chromiumPath } : {}),
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   },
 });
