@@ -42,7 +42,7 @@ function addRecentMessage(from, body, reply) {
 
 // ── Gemini ────────────────────────────────────────────────────────────────────
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
 // ── WhatsApp ──────────────────────────────────────────────────────────────────
 let chromiumPath;
@@ -62,18 +62,18 @@ const client = new Client({
 
 client.on('qr', (qr) => {
   botStatus = 'awaiting_qr';
-  console.log('Escaneie o QR Code abaixo com o WhatsApp:');
+  console.log('[T.I.Z] Escaneie o QR Code abaixo com o WhatsApp:');
   qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
   botStatus = 'connected';
-  console.log('BOT CONECTADO');
+  console.log('[T.I.Z] Bot conectado e pronto para atender!');
 });
 
 client.on('disconnected', () => {
   botStatus = 'offline';
-  console.log('BOT DESCONECTADO');
+  console.log('[T.I.Z] Bot desconectado.');
 });
 
 client.on('message', async (message) => {
@@ -88,8 +88,8 @@ client.on('message', async (message) => {
     const contact = message.from.replace('@c.us', '');
     addRecentMessage(contact, message.body, reply);
   } catch (err) {
-    console.error('Erro ao processar mensagem com Gemini:', err);
-    await message.reply('Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente.');
+    console.error('[T.I.Z] Erro ao processar mensagem com Gemini:', err.message ?? err);
+    await message.reply('Desculpe, ocorreu um erro ao processar sua mensagem. Tente novamente em instantes.');
   }
 });
 
@@ -148,7 +148,7 @@ app.post('/salvar-prompt', (req, res) => {
   prompts[id] = prompt;
   if (id === 'default') {
     defaultPrompt = prompt;
-    console.log('Prompt padrão atualizado.');
+    console.log('[T.I.Z] Prompt padrão atualizado.');
   }
   return res.json({ message: 'Prompt salvo com sucesso.', id });
 });
@@ -164,5 +164,5 @@ app.get('/pegar-prompt/:id', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor Express rodando na porta ${PORT}`);
+  console.log(`[T.I.Z] Servidor Express rodando na porta ${PORT}`);
 });
