@@ -28,9 +28,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             >
               <Zap size={16} style={{ color: "#000" }} />
             </div>
-            <span className="text-base font-bold tracking-wide" style={{ color: "#D4AF37" }}>
-              BotZap Pro
-            </span>
+            <div>
+              <span className="text-base font-bold tracking-wide" style={{ color: "#D4AF37" }}>
+                T.I.Z
+              </span>
+              <span className="text-xs block font-medium tracking-wider" style={{ color: "rgba(212,175,55,0.55)", marginTop: "-2px" }}>
+                Talk In Zap
+              </span>
+            </div>
           </div>
         </div>
 
@@ -59,7 +64,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Footer */}
         <div className="px-6 py-4 border-t" style={{ borderColor: "rgba(212,175,55,0.12)" }}>
           <p className="text-xs" style={{ color: "rgba(255,255,255,0.25)" }}>
-            BotZap Pro v1.0
+            T.I.Z — Talk In Zap v1.0
           </p>
         </div>
       </aside>

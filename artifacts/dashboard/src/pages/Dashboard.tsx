@@ -113,7 +113,7 @@ export default function Dashboard() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-white">Dashboard</h1>
         <p className="mt-1 text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>
-          Visão geral do seu bot WhatsApp
+          T.I.Z — Talk In Zap · Visão geral do seu bot
         </p>
       </div>
 

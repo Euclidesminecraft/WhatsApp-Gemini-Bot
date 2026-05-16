@@ -70,7 +70,7 @@ export default function PromptEditor() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-white">Prompt Editor</h1>
         <p className="mt-1 text-sm" style={{ color: "rgba(255,255,255,0.4)" }}>
-          Personalize o comportamento do seu bot com IA
+          T.I.Z — Personalize o comportamento do seu bot com IA Gemini
         </p>
       </div>
 
