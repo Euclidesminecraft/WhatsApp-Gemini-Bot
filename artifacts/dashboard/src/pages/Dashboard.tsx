@@ -95,17 +95,23 @@ function timeAgo(iso: string) {
 }
 
 export default function Dashboard() {
-  const { data: status, isLoading: statusLoading } = useQuery({
+  const { data: status, isLoading: statusLoading, isError: statusError } = useQuery({
     queryKey: ["status"],
     queryFn: fetchStatus,
     refetchInterval: 5000,
+    retry: false,
   });
 
   const { data: messages = [], isLoading: msgsLoading } = useQuery({
     queryKey: ["mensagens"],
     queryFn: fetchMessages,
     refetchInterval: 5000,
+    retry: false,
   });
+
+  const botStatus: BotStatus["status"] = statusError
+    ? "offline"
+    : (status?.status ?? "offline");
 
   return (
     <div className="space-y-8">
@@ -117,16 +123,26 @@ export default function Dashboard() {
         </p>
       </div>
 
+      {statusError && (
+        <div
+          className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm"
+          style={{ backgroundColor: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)" }}
+        >
+          <WifiOff size={14} />
+          Bot offline ou a iniciar — aguardando ligação na porta 3000…
+        </div>
+      )}
+
       {/* Stats grid */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
-          icon={status?.status === "connected" ? Wifi : WifiOff}
+          icon={botStatus === "connected" ? Wifi : WifiOff}
           label="Status"
           value={
             statusLoading ? (
               <span className="text-white/30">—</span>
             ) : (
-              <StatusBadge status={status!.status} />
+              <StatusBadge status={botStatus} />
             )
           }
           sub="Atualizado a cada 5s"
@@ -134,13 +150,13 @@ export default function Dashboard() {
         <StatCard
           icon={MessageCircle}
           label="Mensagens Hoje"
-          value={statusLoading ? "—" : status!.mensagensHoje}
+          value={statusLoading ? "—" : (status?.mensagensHoje ?? 0)}
           sub="Respostas enviadas pelo bot"
         />
         <StatCard
           icon={User}
           label="Cliente Ativo"
-          value={statusLoading ? "—" : status!.clienteAtivo}
+          value={statusLoading ? "—" : (status?.clienteAtivo ?? "—")}
           sub="ID da sessão LocalAuth"
         />
       </div>
@@ -154,10 +170,10 @@ export default function Dashboard() {
           <h2 className="text-sm font-semibold tracking-wider uppercase" style={{ color: "rgba(255,255,255,0.4)" }}>
             Conexão WhatsApp
           </h2>
-          {status && <StatusBadge status={status.status} />}
+          <StatusBadge status={botStatus} />
         </div>
 
-        {status?.status === "connected" ? (
+        {botStatus === "connected" ? (
           <div className="flex items-center gap-3 py-4">
             <div
               className="w-12 h-12 rounded-2xl flex items-center justify-center"
@@ -172,7 +188,7 @@ export default function Dashboard() {
               </p>
             </div>
           </div>
-        ) : status?.status === "awaiting_qr" ? (
+        ) : botStatus === "awaiting_qr" ? (
           <div className="py-4">
             <p className="text-sm text-white/60">
               Escaneie o QR Code no console do workflow <span className="text-[#D4AF37] font-medium">WhatsApp Bot</span> para conectar.
