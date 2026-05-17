@@ -35,11 +35,14 @@ export default defineConfig({
       "Cache-Control": "no-store",
     },
     proxy: {
+      "/clientes": { target: "http://localhost:3000", changeOrigin: true },
+      "/ia": { target: "http://localhost:3000", changeOrigin: true },
       "/status": { target: "http://localhost:3000", changeOrigin: true },
       "/mensagens": { target: "http://localhost:3000", changeOrigin: true },
       "/testar-resposta": { target: "http://localhost:3000", changeOrigin: true },
       "/salvar-prompt": { target: "http://localhost:3000", changeOrigin: true },
       "/pegar-prompt": { target: "http://localhost:3000", changeOrigin: true },
+      "/health": { target: "http://localhost:3000", changeOrigin: true },
     },
   },
   preview: {
