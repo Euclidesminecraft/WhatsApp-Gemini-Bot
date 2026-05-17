@@ -1,3 +1,4 @@
+// T.I.Z — Talk In Zap | Bot WhatsApp + API
 import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth } = pkg;
 import qrcode from 'qrcode-terminal';
@@ -11,7 +12,16 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// ── Chromium path ─────────────────────────────────────────────────────────────
+// ── Verificação de arranque ───────────────────────────────────────────────────
+if (!process.env.GEMINI_KEY && !process.env.DEEPSEEK_KEY) {
+  console.error('[T.I.Z] ERRO FATAL: Nenhuma chave de IA configurada. Defina GEMINI_KEY ou DEEPSEEK_KEY.');
+  process.exit(1);
+}
+if (!process.env.GEMINI_KEY) {
+  console.warn('[T.I.Z] AVISO: GEMINI_KEY não definida — a usar apenas DeepSeek.');
+}
+
+// ── Chromium ──────────────────────────────────────────────────────────────────
 let chromiumPath;
 try {
   chromiumPath = execSync('which chromium 2>/dev/null || which chromium-browser 2>/dev/null').toString().trim();
@@ -19,7 +29,7 @@ try {
   chromiumPath = undefined;
 }
 
-// ── AI Clients ────────────────────────────────────────────────────────────────
+// ── Clientes IA ───────────────────────────────────────────────────────────────
 const geminiClient = process.env.GEMINI_KEY
   ? new GoogleGenerativeAI(process.env.GEMINI_KEY)
   : null;
@@ -28,65 +38,131 @@ const deepseekClient = process.env.DEEPSEEK_KEY
   ? new OpenAI({ apiKey: process.env.DEEPSEEK_KEY, baseURL: 'https://api.deepseek.com' })
   : null;
 
-async function gerarResposta(promptSistema, mensagem, provedor = 'gemini') {
-  const textoCompleto = `${promptSistema}\n\nMensagem do usuário: ${mensagem}`;
+// ── Cache de respostas (5 minutos por pergunta+provedor) ──────────────────────
+const respostaCache = new Map(); // key: `${provedor}:${mensagem}` → { resposta, ts }
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+function getCached(provedor, mensagem) {
+  const key = `${provedor}:${mensagem}`;
+  const entry = respostaCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > CACHE_TTL_MS) { respostaCache.delete(key); return null; }
+  return entry.resposta;
+}
+
+function setCache(provedor, mensagem, resposta) {
+  respostaCache.set(`${provedor}:${mensagem}`, { resposta, ts: Date.now() });
+  // Limitar tamanho do cache a 200 entradas
+  if (respostaCache.size > 200) {
+    const firstKey = respostaCache.keys().next().value;
+    respostaCache.delete(firstKey);
+  }
+}
+
+// ── Gerar resposta com IA ─────────────────────────────────────────────────────
+async function gerarResposta(promptSistema, mensagem, provedor = 'gemini', historico = []) {
+  // Truncar mensagens longas (>500 chars) para poupar tokens
+  const mensagemTruncada = mensagem.length > 500
+    ? mensagem.slice(0, 497) + '…'
+    : mensagem;
+
+  // Verificar cache
+  const cached = getCached(provedor, mensagemTruncada);
+  if (cached) {
+    console.log(`[T.I.Z] Cache hit para: "${mensagemTruncada.slice(0, 40)}"`);
+    return cached;
+  }
+
+  let resposta;
 
   if (provedor === 'deepseek') {
     if (!deepseekClient) throw new Error('DEEPSEEK_KEY não configurada.');
+    // Construir histórico (últimas 5 trocas = 10 mensagens)
+    const messages = [
+      { role: 'system', content: promptSistema },
+      ...historico.slice(-10),
+      { role: 'user', content: mensagemTruncada },
+    ];
     const res = await deepseekClient.chat.completions.create({
       model: 'deepseek-chat',
-      messages: [
-        { role: 'system', content: promptSistema },
-        { role: 'user', content: mensagem },
-      ],
-      max_tokens: 800,
+      messages,
+      max_tokens: 250,
+      temperature: 0.7,
     });
-    return res.choices[0].message.content;
-  }
+    resposta = res.choices[0].message.content;
 
-  // gemini (padrão) com fallback para deepseek
-  if (geminiClient) {
-    try {
-      const model = geminiClient.getGenerativeModel({ model: 'gemini-2.0-flash' });
-      const result = await model.generateContent(textoCompleto);
-      return result.response.text();
-    } catch (err) {
-      console.warn('[T.I.Z] Gemini falhou, tentando DeepSeek:', err.message?.slice(0, 80));
-      if (deepseekClient) {
-        const res = await deepseekClient.chat.completions.create({
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'system', content: promptSistema },
-            { role: 'user', content: mensagem },
-          ],
-          max_tokens: 800,
+  } else {
+    // Gemini — prompt como system instruction (não reenviado em cada mensagem)
+    if (geminiClient) {
+      try {
+        const model = geminiClient.getGenerativeModel({
+          model: 'gemini-1.5-flash',
+          systemInstruction: promptSistema,
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 250,
+          },
         });
-        return res.choices[0].message.content;
+
+        // Construir histórico para Gemini (pares user/model)
+        const history = historico
+          .filter((_, i) => i < historico.length - 1 || historico[i].role !== 'user')
+          .map(m => ({
+            role: m.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: m.content }],
+          }));
+
+        const chat = model.startChat({ history });
+        const result = await chat.sendMessage(mensagemTruncada);
+        resposta = result.response.text();
+
+      } catch (err) {
+        console.warn('[T.I.Z] Gemini falhou, fallback DeepSeek:', err.message?.slice(0, 80));
+        if (deepseekClient) {
+          const messages = [
+            { role: 'system', content: promptSistema },
+            ...historico.slice(-10),
+            { role: 'user', content: mensagemTruncada },
+          ];
+          const res = await deepseekClient.chat.completions.create({
+            model: 'deepseek-chat',
+            messages,
+            max_tokens: 250,
+            temperature: 0.7,
+          });
+          resposta = res.choices[0].message.content;
+        } else {
+          throw err;
+        }
       }
-      throw err;
+    } else if (deepseekClient) {
+      const messages = [
+        { role: 'system', content: promptSistema },
+        ...historico.slice(-10),
+        { role: 'user', content: mensagemTruncada },
+      ];
+      const res = await deepseekClient.chat.completions.create({
+        model: 'deepseek-chat',
+        messages,
+        max_tokens: 250,
+        temperature: 0.7,
+      });
+      resposta = res.choices[0].message.content;
+    } else {
+      throw new Error('Nenhuma chave de IA configurada.');
     }
   }
 
-  if (deepseekClient) {
-    const res = await deepseekClient.chat.completions.create({
-      model: 'deepseek-chat',
-      messages: [
-        { role: 'system', content: promptSistema },
-        { role: 'user', content: mensagem },
-      ],
-      max_tokens: 800,
-    });
-    return res.choices[0].message.content;
-  }
-
-  throw new Error('Nenhuma chave de IA configurada (GEMINI_KEY ou DEEPSEEK_KEY).');
+  setCache(provedor, mensagemTruncada, resposta);
+  return resposta;
 }
 
 // ── Estado global ─────────────────────────────────────────────────────────────
-// clientes: { [id]: { id, nome, prompt, provedor, status, qrCode, client, mensagens, totalHoje, lastCountDate } }
 const clientes = {};
+// Histórico de conversa por utilizador: { [clienteId]: { [from]: [{role, content}] } }
+const historicoUsers = {};
 
-const DEFAULT_PROMPT = 'Você é um assistente virtual prestativo e simpático do T.I.Z. Responda sempre em português de forma clara e objetiva.';
+const DEFAULT_PROMPT = 'Você é um assistente virtual prestativo e simpático do T.I.Z — Talk In Zap. Responda sempre em português de forma clara e objetiva. Seja conciso.';
 
 function criarEstadoCliente(id, nome) {
   return {
@@ -101,6 +177,20 @@ function criarEstadoCliente(id, nome) {
     totalHoje: 0,
     lastCountDate: new Date().toDateString(),
   };
+}
+
+function getHistorico(clienteId, from) {
+  if (!historicoUsers[clienteId]) historicoUsers[clienteId] = {};
+  if (!historicoUsers[clienteId][from]) historicoUsers[clienteId][from] = [];
+  return historicoUsers[clienteId][from];
+}
+
+function addAoHistorico(clienteId, from, mensagem, resposta) {
+  const hist = getHistorico(clienteId, from);
+  hist.push({ role: 'user', content: mensagem });
+  hist.push({ role: 'assistant', content: resposta });
+  // Manter apenas as últimas 5 trocas (10 mensagens)
+  if (hist.length > 10) hist.splice(0, hist.length - 10);
 }
 
 function addMensagem(clienteId, from, body, reply) {
@@ -123,21 +213,29 @@ function iniciarCliente(clienteId) {
 
   // Limpar lock files do Chromium
   try {
-    const lockDir = path.join(__dirname, '.wwebjs_auth', `session-${clienteId}`, 'Default');
+    const lockDir = path.join('/tmp/wwebjs', `session-${clienteId}`, 'Default');
     execSync(`rm -f "${lockDir}/SingletonLock" "${lockDir}/SingletonSocket" "${lockDir}/SingletonCookie" 2>/dev/null || true`);
   } catch {}
 
   const waClient = new Client({
-    authStrategy: new LocalAuth({ clientId: clienteId }),
+    authStrategy: new LocalAuth({
+      clientId: clienteId,
+      dataPath: '/tmp/wwebjs',
+    }),
     puppeteer: {
       ...(chromiumPath ? { executablePath: chromiumPath } : {}),
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--single-process',
+      ],
     },
   });
 
   waClient.on('qr', async (qr) => {
     estado.status = 'awaiting_qr';
-    console.log(`[T.I.Z][${clienteId}] QR Code gerado.`);
+    console.log(`[T.I.Z][${clienteId}] QR Code gerado — escaneia com o WhatsApp.`);
     qrcode.generate(qr, { small: true });
     try {
       estado.qrCode = await qrcodeImg.toDataURL(qr);
@@ -147,37 +245,41 @@ function iniciarCliente(clienteId) {
   waClient.on('ready', () => {
     estado.status = 'connected';
     estado.qrCode = null;
-    console.log(`[T.I.Z][${clienteId}] Conectado!`);
+    console.log(`[T.I.Z][${clienteId}] ✓ Conectado ao WhatsApp!`);
   });
 
-  waClient.on('disconnected', () => {
+  waClient.on('disconnected', (reason) => {
     estado.status = 'offline';
     estado.qrCode = null;
-    console.log(`[T.I.Z][${clienteId}] Desconectado.`);
+    console.log(`[T.I.Z][${clienteId}] Desconectado: ${reason}`);
   });
 
   waClient.on('message', async (message) => {
-    if (message.from.endsWith('@g.us')) return;
+    if (message.from.endsWith('@g.us')) return; // ignorar grupos
     if (message.fromMe) return;
+
+    const from = message.from.replace('@c.us', '');
+    const hist = getHistorico(clienteId, from);
+
     try {
-      const reply = await gerarResposta(estado.prompt, message.body, estado.provedor);
+      const reply = await gerarResposta(estado.prompt, message.body, estado.provedor, hist);
       await message.reply(reply);
-      const contact = message.from.replace('@c.us', '');
-      addMensagem(clienteId, contact, message.body, reply);
+      addAoHistorico(clienteId, from, message.body, reply);
+      addMensagem(clienteId, from, message.body, reply);
     } catch (err) {
       console.error(`[T.I.Z][${clienteId}] Erro IA:`, err.message ?? err);
-      await message.reply('Desculpe, ocorreu um erro. Tente novamente em instantes.');
+      await message.reply('Desculpe, ocorreu um erro temporário. Tenta novamente em instantes.');
     }
   });
 
   waClient.initialize();
   estado.client = waClient;
-  console.log(`[T.I.Z][${clienteId}] Iniciando...`);
+  console.log(`[T.I.Z][${clienteId}] A inicializar sessão…`);
 }
 
 // ── Express ───────────────────────────────────────────────────────────────────
 const app = express();
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '1mb' }));
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -186,9 +288,25 @@ app.use((req, res, next) => {
   next();
 });
 
-// ── Endpoints de clientes ─────────────────────────────────────────────────────
+// ── Rotas de sistema ──────────────────────────────────────────────────────────
+app.get('/', (req, res) => {
+  res.json({
+    app: 'T.I.Z — Talk In Zap',
+    version: '2.0.0',
+    status: 'running',
+    clientes: Object.keys(clientes).length,
+    ia: {
+      gemini: !!geminiClient,
+      deepseek: !!deepseekClient,
+    },
+  });
+});
 
-// GET /clientes — lista todos os clientes
+app.get('/health', (req, res) => {
+  res.json({ ok: true, ts: new Date().toISOString() });
+});
+
+// ── Endpoints de clientes ─────────────────────────────────────────────────────
 app.get('/clientes', (req, res) => {
   const lista = Object.values(clientes).map(c => ({
     id: c.id,
@@ -202,7 +320,6 @@ app.get('/clientes', (req, res) => {
   res.json(lista);
 });
 
-// POST /clientes — adicionar novo cliente
 app.post('/clientes', (req, res) => {
   const { id, nome } = req.body;
   if (!id) return res.status(400).json({ error: 'Campo "id" é obrigatório.' });
@@ -213,16 +330,15 @@ app.post('/clientes', (req, res) => {
   res.json({ message: 'Cliente criado e a iniciar.', id, nome: estado.nome });
 });
 
-// DELETE /clientes/:id — remover cliente
 app.delete('/clientes/:id', (req, res) => {
   const { id } = req.params;
   if (!clientes[id]) return res.status(404).json({ error: 'Cliente não encontrado.' });
   try { clientes[id].client?.destroy(); } catch {}
   delete clientes[id];
+  delete historicoUsers[id];
   res.json({ message: 'Cliente removido.' });
 });
 
-// POST /clientes/:id/reiniciar — reiniciar sessão
 app.post('/clientes/:id/reiniciar', (req, res) => {
   const { id } = req.params;
   if (!clientes[id]) return res.status(404).json({ error: 'Cliente não encontrado.' });
@@ -230,7 +346,6 @@ app.post('/clientes/:id/reiniciar', (req, res) => {
   res.json({ message: 'Sessão reiniciada.' });
 });
 
-// GET /clientes/:id/qr — QR code como imagem base64
 app.get('/clientes/:id/qr', (req, res) => {
   const c = clientes[req.params.id];
   if (!c) return res.status(404).json({ error: 'Cliente não encontrado.' });
@@ -238,14 +353,12 @@ app.get('/clientes/:id/qr', (req, res) => {
   res.json({ qrCode: c.qrCode });
 });
 
-// GET /clientes/:id/mensagens — mensagens recentes
 app.get('/clientes/:id/mensagens', (req, res) => {
   const c = clientes[req.params.id];
   if (!c) return res.status(404).json({ error: 'Cliente não encontrado.' });
   res.json(c.mensagens);
 });
 
-// POST /clientes/:id/prompt — salvar prompt
 app.post('/clientes/:id/prompt', (req, res) => {
   const { id } = req.params;
   const { prompt } = req.body;
@@ -256,7 +369,6 @@ app.post('/clientes/:id/prompt', (req, res) => {
   res.json({ message: 'Prompt salvo.', id });
 });
 
-// POST /clientes/:id/provedor — trocar provedor de IA
 app.post('/clientes/:id/provedor', (req, res) => {
   const { id } = req.params;
   const { provedor } = req.body;
@@ -268,9 +380,7 @@ app.post('/clientes/:id/provedor', (req, res) => {
   res.json({ message: `Provedor alterado para ${provedor}.`, id });
 });
 
-// ── Endpoints globais (compatibilidade + stats) ───────────────────────────────
-
-// GET /status — status geral (todos os clientes)
+// ── Endpoints globais ─────────────────────────────────────────────────────────
 app.get('/status', (req, res) => {
   const lista = Object.values(clientes);
   const conectados = lista.filter(c => c.status === 'connected').length;
@@ -286,7 +396,6 @@ app.get('/status', (req, res) => {
   });
 });
 
-// GET /mensagens — mensagens de todos os clientes
 app.get('/mensagens', (req, res) => {
   const todas = Object.values(clientes)
     .flatMap(c => c.mensagens.map(m => ({ ...m, clienteId: c.id, clienteNome: c.nome })))
@@ -295,7 +404,6 @@ app.get('/mensagens', (req, res) => {
   res.json(todas);
 });
 
-// POST /testar-resposta — testar IA
 app.post('/testar-resposta', async (req, res) => {
   const { mensagem, provedor = 'gemini', clienteId } = req.body;
   if (!mensagem) return res.status(400).json({ error: 'Campo "mensagem" é obrigatório.' });
@@ -311,19 +419,16 @@ app.post('/testar-resposta', async (req, res) => {
   }
 });
 
-// POST /salvar-prompt (compatibilidade)
 app.post('/salvar-prompt', (req, res) => {
   const { id, prompt } = req.body;
   if (!id || !prompt) return res.status(400).json({ error: 'Campos "id" e "prompt" são obrigatórios.' });
   const clienteId = id === 'default' ? Object.keys(clientes)[0] : id;
   if (clienteId && clientes[clienteId]) {
     clientes[clienteId].prompt = prompt;
-    console.log(`[T.I.Z] Prompt atualizado para ${clienteId}.`);
   }
   return res.json({ message: 'Prompt salvo.', id });
 });
 
-// GET /pegar-prompt/:id (compatibilidade)
 app.get('/pegar-prompt/:id', (req, res) => {
   const { id } = req.params;
   const clienteId = id === 'default' ? Object.keys(clientes)[0] : id;
@@ -333,17 +438,19 @@ app.get('/pegar-prompt/:id', (req, res) => {
   return res.json({ id, prompt: clientes[clienteId].prompt });
 });
 
-// GET /ia/status — verificar disponibilidade das IAs
 app.get('/ia/status', async (req, res) => {
   const resultado = { gemini: false, deepseek: false };
 
   if (geminiClient) {
     try {
-      const model = geminiClient.getGenerativeModel({ model: 'gemini-2.0-flash' });
+      const model = geminiClient.getGenerativeModel({
+        model: 'gemini-1.5-flash',
+        generationConfig: { maxOutputTokens: 5 },
+      });
       await model.generateContent('ok');
       resultado.gemini = true;
     } catch (e) {
-      resultado.geminiErro = e.message?.slice(0, 100);
+      resultado.geminiErro = e.message?.slice(0, 120);
     }
   } else {
     resultado.geminiErro = 'GEMINI_KEY não configurada';
@@ -358,7 +465,7 @@ app.get('/ia/status', async (req, res) => {
       });
       resultado.deepseek = true;
     } catch (e) {
-      resultado.deepseekErro = e.message?.slice(0, 100);
+      resultado.deepseekErro = e.message?.slice(0, 120);
     }
   } else {
     resultado.deepseekErro = 'DEEPSEEK_KEY não configurada';
@@ -367,8 +474,11 @@ app.get('/ia/status', async (req, res) => {
   res.json(resultado);
 });
 
+// ── Servidor ──────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`[T.I.Z] Servidor Express rodando na porta ${PORT}`);
-  console.log(`[T.I.Z] Gemini: ${geminiClient ? 'configurado' : 'sem chave'} | DeepSeek: ${deepseekClient ? 'configurado' : 'sem chave'}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`[T.I.Z] ✓ T.I.Z — Talk In Zap rodando em 0.0.0.0:${PORT}`);
+  console.log(`[T.I.Z] Gemini: ${geminiClient ? '✓ configurado (gemini-1.5-flash)' : '✗ sem chave'} | DeepSeek: ${deepseekClient ? '✓ configurado' : '✗ sem chave'}`);
+  console.log(`[T.I.Z] Cache activo: até 200 entradas, TTL 5 minutos`);
+  console.log(`[T.I.Z] Optimizações: maxTokens=250, truncagem=500chars, histórico=5 trocas`);
 });
