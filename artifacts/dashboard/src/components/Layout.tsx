@@ -1,9 +1,11 @@
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, MessageSquareText, Zap } from "lucide-react";
+import { LayoutDashboard, Users, MessageSquareText, Brain, Zap } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/clientes", label: "Clientes", icon: Users },
   { href: "/prompt", label: "Prompt Editor", icon: MessageSquareText },
+  { href: "/ia", label: "Configurar IA", icon: Brain },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -14,27 +16,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* Sidebar */}
       <aside
         className="w-60 shrink-0 flex flex-col border-r"
-        style={{
-          backgroundColor: "#000000",
-          borderColor: "rgba(212,175,55,0.12)",
-        }}
+        style={{ backgroundColor: "#000000", borderColor: "rgba(212,175,55,0.12)" }}
       >
         {/* Logo */}
         <div className="px-6 py-7 border-b" style={{ borderColor: "rgba(212,175,55,0.12)" }}>
           <div className="flex items-center gap-2.5">
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center"
-              style={{ backgroundColor: "#D4AF37" }}
-            >
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: "#D4AF37" }}>
               <Zap size={16} style={{ color: "#000" }} />
             </div>
             <div>
-              <span className="text-base font-bold tracking-wide" style={{ color: "#D4AF37" }}>
-                T.I.Z
-              </span>
-              <span className="text-xs block font-medium tracking-wider" style={{ color: "rgba(212,175,55,0.55)", marginTop: "-2px" }}>
-                Talk In Zap
-              </span>
+              <span className="text-base font-bold tracking-wide" style={{ color: "#D4AF37" }}>T.I.Z</span>
+              <span className="text-xs block font-medium tracking-wider" style={{ color: "rgba(212,175,55,0.55)", marginTop: "-2px" }}>Talk In Zap</span>
             </div>
           </div>
         </div>
@@ -63,17 +55,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         {/* Footer */}
         <div className="px-6 py-4 border-t" style={{ borderColor: "rgba(212,175,55,0.12)" }}>
-          <p className="text-xs" style={{ color: "rgba(255,255,255,0.25)" }}>
-            T.I.Z — Talk In Zap v1.0
-          </p>
+          <p className="text-xs" style={{ color: "rgba(255,255,255,0.25)" }}>T.I.Z — Talk In Zap v2.0</p>
         </div>
       </aside>
 
       {/* Main */}
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-5xl mx-auto px-8 py-10">
-          {children}
-        </div>
+        <div className="max-w-5xl mx-auto px-8 py-10">{children}</div>
       </main>
     </div>
   );
